@@ -696,6 +696,8 @@ create_resource(Req, State) ->
 %% case that create_resource exists.
 created_path(Req, State) ->
     case call(Req, State, created_path) of
+	no_call ->
+	    respond(Req,State,201);
 	{halt, Req2, HandlerState} ->
 	    respond(Req2, State#state{handler_state=HandlerState}, 500);
 	{{halt,StatusCode}, Req2, HandlerState} ->
@@ -792,6 +794,7 @@ content_types_accepted(Req, State, OnTrue) ->
 	    State2 = State#state{handler_state=HandlerState},
 	    {ok, ContentType, Req3}
 		= cowboy_req:parse_header(<<"content-type">>, Req2),
+	    io:format("~n~n~p~n~p~n~n",[ContentType, CTA2]),
 	    choose_content_type(Req3, State2, OnTrue, ContentType, CTA2)
     end.
 
@@ -803,8 +806,10 @@ choose_content_type(Req, State, _OnTrue, _ContentType, []) ->
     respond(Req, State, 415);
 choose_content_type(Req,
 		    State=#state{handler_state=HandlerState},
-		    OnTrue, ContentType, [{Accepted, Fun}|_Tail])
-  when Accepted =:= '*' orelse Accepted =:= ContentType ->
+		    OnTrue, {CA,CT,_CE} = ContentType, [{{AA, AT, AE} = Accepted, Fun}|_Tail])
+  when Accepted =:= '*' orelse
+       Accepted =:= ContentType orelse
+       (CA =:= AA andalso CT =:= AT andalso AE =:= []) ->
     case Fun(Req, HandlerState) of
 	{true, Req2, HandlerState2} ->
 	    State2 = State#state{handler_state=HandlerState2},
@@ -825,15 +830,33 @@ choose_content_type(Req, State, OnTrue, ContentType, [_Any|Tail]) ->
 %% header by this point if we did so.
 is_new_resource(Req, State) ->
     case cowboy_req:has_resp_header(<<"location">>, Req) of
-	true -> respond(Req, State, 201);
+	true -> reply(Req, State, 201);
 	false -> has_resp_body(Req, State)
     end.
 
-has_resp_body(Req, State) ->
-    case cowboy_req:has_resp_body(Req) of
-	true -> multiple_choices(Req, State);
-	false -> respond(Req, State, 204)
-    end.
+
+has_resp_body(Req, State = #state{content_type_a={_Type,Fun}, handler_state=HandlerState}) ->
+    case Fun(Req,HandlerState) of
+	{halt, Req2, HandlerState} ->
+	    respond(Req2, State#state{handler_state=HandlerState}, 500);
+	{{halt,StatusCode}, Req2, HandlerState} ->
+	    respond(Req2, State#state{handler_state=HandlerState}, StatusCode);
+	{undefined, Req3, HandlerState2} ->
+	    multiple_choices(Req3,State#state{handler_state=HandlerState2});
+	{Body, Req3, HandlerState2} ->
+	    State2 = State#state{handler_state=HandlerState2},
+	    Req4 = case Body of
+		       {stream, StreamFun} ->
+			   cowboy_req:set_resp_body_fun(StreamFun, Req3);
+		       {stream, Len, StreamFun} ->
+			   cowboy_req:set_resp_body_fun(Len, StreamFun, Req3);
+		       _Contents ->
+			   cowboy_req:set_resp_body(Body, Req3)
+		   end,
+	    multiple_choices(Req4,State2)
+    end;
+has_resp_body(Req,State) ->
+    reply(Req,State,204).
 
 %% Set the response headers. 
 set_resp_headers(Req, State) ->
@@ -851,7 +874,18 @@ set_resp_headers(Req, State) ->
     multiple_choices(Req5, State4).
 
 multiple_choices(Req, State) ->
-    expect(Req, State, multiple_choices, false, 200, 300).
+    case call(Req, State, multiple_choices) of
+	no_call ->
+	    next(Req, State, 200);
+	{halt, Req2, HandlerState} ->
+	    respond(Req2, State#state{handler_state=HandlerState}, 500);
+	{{halt,StatusCode}, Req2, HandlerState} ->
+	    respond(Req2, State#state{handler_state=HandlerState}, StatusCode);
+	{false, Req2, HandlerState} ->
+	    reply(Req2, State#state{handler_state=HandlerState}, 200);
+	{true, Req2, HandlerState} ->
+	    reply(Req2, State#state{handler_state=HandlerState}, 300)
+    end.
 
 %% Response utility functions.
 
@@ -953,7 +987,7 @@ next(Req, State, StatusCode) when is_integer(StatusCode) ->
     respond(Req, State, StatusCode).
 
 respond(Req, State = #state{content_type_a={_Type,Fun}, handler_state=HandlerState}, StatusCode) ->
-    {ok,Req2} = cowboy_req:set_meta(status_code,StatusCode,Req),
+    Req2 = cowboy_req:set_meta(status_code,StatusCode,Req),
     case Fun(Req2,HandlerState) of
 	{halt, Req2, HandlerState} ->
 	    respond(Req2, State#state{handler_state=HandlerState}, 500);
@@ -969,11 +1003,13 @@ respond(Req, State = #state{content_type_a={_Type,Fun}, handler_state=HandlerSta
 		       _Contents ->
 			   cowboy_req:set_resp_body(Body, Req3)
 		   end,
-	    {ok,Req5} = cowboy_req:reply(StatusCode,Req4),
-	    terminate(Req5,State2)
+	    reply(Req4,State2, StatusCode)
     end;
 respond(Req, State, StatusCode) ->
-    {ok,Req2} = cowboy_req:set_meta(status_code,StatusCode,Req),
+    reply(Req,State, StatusCode).
+
+reply(Req,State,StatusCode) ->
+    Req2 = cowboy_req:set_meta(status_code,StatusCode,Req),
     {ok, Req3} = cowboy_req:reply(StatusCode, Req2),
     terminate(Req3, State).
 

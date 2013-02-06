@@ -1,0 +1,12 @@
+{application, ext_cowboy,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { ext_cowboy_app, []}},
+  {env, []}
+ ]}.
