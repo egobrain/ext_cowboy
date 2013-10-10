@@ -36,28 +36,48 @@
          multipart_prop/1,
          multipart_props/1,
          multipart_big_prop_error/1,
-         multipart_props_error/1
+         multipart_props_error/1,
+
+         regexp_router_simple/1,
+         regexp_router_any/1,
+         regexp_router_data/1,
+         regexp_router_int_re/1,
+         regexp_router_int_constr/1,
+         regexp_router_int_fun/1
         ]).
 
 all() ->
     [
-     {group, http}
+     {group, http},
+     {group, regexp_router}
     ].
 
 groups() ->
-    Tests = [
-             multipart_file,
-             multipart_files,
-             multipart_big_file_error,
-             multipart_files_error,
+    Tests =
+        [
+         multipart_file,
+         multipart_files,
+         multipart_big_file_error,
+         multipart_files_error,
 
-             multipart_prop,
-             multipart_props,
-             multipart_big_prop_error,
-             multipart_props_error
-            ],
+         multipart_prop,
+         multipart_props,
+         multipart_big_prop_error,
+         multipart_props_error
+        ],
+
+    RegexpRouterTests =
+        [
+         regexp_router_simple,
+         regexp_router_any,
+         regexp_router_data,
+         regexp_router_int_re,
+         regexp_router_int_constr,
+         regexp_router_int_fun
+        ],
     [
-     {http, [parallel], Tests}
+     {http, [parallel], Tests},
+     {regexp_router, [parallel], RegexpRouterTests}
     ].
 
 init_per_suite(Config) ->
@@ -85,6 +105,20 @@ init_per_group(http, Config) ->
     Port = ranch:get_port(http),
     {ok, Client} = cowboy_client:init([]),
     [{scheme, <<"http">>}, {port, Port}, {opts, []},
+     {transport, Transport}, {client, Client}|Config];
+
+init_per_group(regexp_router = Name, Config) ->
+    Transport = ranch_tcp,
+    {ok, _} = cowboy:start_http(Name, 100, [{port, 0}],
+                                [
+                                 {env, [{regexp_dispatch, init_regexp_dispatch(Config)}]},
+                                 {middlewares, [ext_regexp_router, cowboy_handler]},
+                                 {max_keepalive, 50},
+                                 {timeout, 500}
+                                ]),
+    Port = ranch:get_port(Name),
+    {ok, Client} = cowboy_client:init([]),
+    [{scheme, <<"http">>}, {port, Port}, {opts, []},
      {transport, Transport}, {client, Client}|Config].
 
 end_per_group(Name, _) ->
@@ -101,6 +135,22 @@ init_dispatch(_Config) ->
          {"/uploader", http_uploader, []}
         ]}
       ]).
+
+init_regexp_dispatch(_Config) ->
+    ext_regexp_router:compile(
+      [
+       {".*",
+        [
+         {"/simple", regexp_router_handler, <<"simple">>},
+         {"/[any]+", regexp_router_handler, <<"any">>},
+         {"/data/(?<data>.+)", regexp_router_handler, <<"data">>},
+         {"/int_re/(?<data>\\d+)", regexp_router_handler, <<"int_re">>},
+         {"/int_constr/(?<data>.+)", [{data, int}], regexp_router_handler, <<"int_constr">>},
+         {"/int_fun/(?<data>.+)", [{data, function, fun bin_to_int/1}],
+          regexp_router_handler, <<"int_fun">>}
+        ]}
+      ]).
+
 
 %% Convenience functions.
 
@@ -265,6 +315,37 @@ multipart_test(Config, Url, Parts) ->
     {ok, RespBody, _} = cowboy_client:response_body(Client3),
     binary_to_term(RespBody).
 
+% Regexp router tests
+
+regexp_router_simple(Config) ->
+    {ok, <<"simple">>, []} = regexp_router_test("/simple", Config).
+
+regexp_router_any(Config) ->
+    {ok, <<"any">>, []} = regexp_router_test("/any", Config),
+    {ok, <<"any">>, []} = regexp_router_test("/aaa", Config),
+    {ok, <<"any">>, []} = regexp_router_test("/annnnny", Config).
+
+regexp_router_data(Config) ->
+    {ok, <<"data">>, [{data, <<"123">>}]} = regexp_router_test("/data/123", Config).
+
+regexp_router_int_re(Config) ->
+    {ok, <<"int_re">>, [{data, <<"123">>}]} = regexp_router_test("/int_re/123", Config).
+
+regexp_router_int_constr(Config) ->
+    {ok, <<"int_constr">>, [{data, 123}]} = regexp_router_test("/int_constr/123", Config).
+
+regexp_router_int_fun(Config) ->
+    {ok, <<"int_fun">>, [{data, 123}]} = regexp_router_test("/int_fun/123", Config).
+
+regexp_router_test(Url, Config) ->
+    Client = ?config(client, Config),
+    {ok, Client2} = cowboy_client:request(<<"GET">>, build_url(Url, Config), Client),
+    {ok, 200, _, Client3} = cowboy_client:response(Client2),
+    {ok, RespBody, _} = cowboy_client:response_body(Client3),
+    binary_to_term(RespBody).
+
+% Ineternal functions
+
 gen_binary(Bytes) ->
     crypto:strong_rand_bytes(Bytes).
 
@@ -277,3 +358,8 @@ join_parts(Parts, Boundry) ->
         <<"\r\n\r\n", Body/binary>>
        ] || {Headers, Body} <- Parts
       ] ++ [<<"\r\n--", Boundry/binary, "--\r\n">>]).
+
+bin_to_int(Bin) ->
+    try {true, list_to_integer(binary_to_list(Bin))}
+    catch _:_ -> false
+    end.

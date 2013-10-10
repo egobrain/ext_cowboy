@@ -13,9 +13,10 @@ PLT_APPS = crypto public_key ssl
 DEPS = cowboy
 dep_cowboy = pkg://cowboy 0.8.6
 
-TEST_DEPS = ct_helper gun
+TEST_DEPS = ct_helper gun re_utils
 dep_ct_helper = https://github.com/extend/ct_helper.git master
 dep_gun = pkg://gun master
+dep_re_utils = https://github.com/egobrain/re_utils.git master
 
 # Standard targets.
 
