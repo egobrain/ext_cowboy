@@ -26,6 +26,7 @@
           delete,
 
           find,
+          g_delete,
 
           hop,
 
@@ -110,6 +111,7 @@ avaible_functions(#route{has_init=HasInit, handler=Handler, state=HandlerState} 
       delete = GetFunction(Handler, delete, 3),
 
       find = GetFunction(Handler, find, 2),
+      g_delete = GetFunction(Handler, g_delete, 2),
 
       hop = GetFunction(Handler, hop, 3)
      }.
@@ -124,7 +126,9 @@ avaible_methods(Route) ->
     GMethods =
         [{<<"GET">>, Route#route.find},
          {<<"POST">>, Route#route.new},
-         {<<"PUT">>, Route#route.new}],
+         {<<"PUT">>, Route#route.new},
+         {<<"DELETE">>, Route#route.g_delete}
+        ],
     Route#route{
        methods = binary_join(<<",">>, [M || {M, F} <- Methods, F =/= false]),
        g_methods = binary_join(<<",">>, [M || {M, F} <- GMethods, F =/= false])
@@ -247,6 +251,8 @@ choose_operation(Req, State) ->
         M when (M =:= <<"POST">> orelse M =:= <<"PUT">>)
 			   andalso not IsLast andalso Route#route.update =/= false ->
             Succ(update);
+        <<"DELETE">> when IsLast andalso Route#route.g_delete =/= false ->
+            Succ(g_delete);
         <<"DELETE">> when not IsLast andalso Route#route.delete =/= false ->
             Succ(delete);
         _  ->
@@ -468,6 +474,13 @@ process(Req, #state{operation=delete, id=Id, target=Route, route_env=RouteEnv} =
             reply(200, Result, Req2, State);
         {error, Reason, Req2} ->
             terminate_reason(Reason, Req2, State)
+    end;
+process(Req, #state{operation=g_delete, target=Route, route_env=RouteEnv} = State) ->
+    case (Route#route.g_delete)(Req, RouteEnv) of
+        {ok, Result, Req2} ->
+            reply(200, Result, Req2, State);
+        {error, Reason, Req2} ->
+            terminate_reason(Reason, Req2, State)
     end.
 
 %% Reply
@@ -497,6 +510,8 @@ content_type_build_params([{Attr, Value}|Tail], Acc) ->
 function_exported(Module, Function, Arity) ->
     lists:member({Function, Arity}, Module:module_info(exports)).
 
+get_function(Module, g_delete, Arity) ->
+    get_function(Module, delete, Arity);
 get_function(Module, Function, Arity) ->
     case function_exported(Module, Function, Arity) of
         true ->
@@ -555,6 +570,15 @@ get_function(Module, hop, Arity, HandlerState) ->
         true ->
             fun(Req, Id, RouteEnv) ->
                     Module:hop(Req, Id, HandlerState, RouteEnv)
+            end;
+        false ->
+           false
+    end;
+get_function(Module, g_delete, Arity, HandlerState) ->
+    case function_exported(Module, delete, Arity) of
+        true ->
+            fun(Req, RouteEnv) ->
+                    Module:delete(Req, HandlerState, RouteEnv)
             end;
         false ->
            false

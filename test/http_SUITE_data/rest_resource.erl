@@ -6,7 +6,8 @@
          get/3,
          update/4,
          delete/3,
-         find/2
+         find/2,
+         delete/2
         ]).
 
 hop(Req, Id, Env) ->
@@ -26,3 +27,6 @@ delete(Req, Id, Env) ->
 
 find(Req, Env) ->
     {ok, {?MODULE, find, Env}, Req}.
+
+delete(Req, Env) ->
+    {ok, {?MODULE, g_delete, Env}, Req}.

@@ -7,7 +7,8 @@
          get/4,
          update/5,
          delete/4,
-         find/3
+         find/3,
+         delete/3
         ]).
 
 init(Opts) ->
@@ -30,3 +31,6 @@ delete(Req, Id, State, Env) ->
 
 find(Req, State, Env) ->
     {ok, {{?MODULE, State}, find, Env}, Req}.
+
+delete(Req, State, Env) ->
+    {ok, {{?MODULE, State}, g_delete, Env}, Req}.

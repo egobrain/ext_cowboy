@@ -447,7 +447,7 @@ test_api(Data, UrlsList, Config) ->
     %%  end || {Result, Url, Method} <- Tests].
 
 api_tests(Data, UrlsList) ->
-    Ops = [find, new, get, update, delete],
+    Ops = [find, new, get, update, delete, g_delete],
     lists:flatten(
       [api_tests(Op, Data, UrlsList) || Op <- Ops]).
 api_tests(Op, Data, UrlsList) ->
@@ -464,7 +464,8 @@ api_tests(Op, Data, UrlsList) ->
 
 foldUrl(Prefix, Op, {Uri, _, _Id})
   when Op =:= new orelse
-       Op =:= find ->
+       Op =:= find orelse
+       Op =:= g_delete ->
     string:join([Prefix, Uri], "/");
 foldUrl(Prefix, Op, {Uri, _, Id})
   when Op =:= get orelse
@@ -481,7 +482,9 @@ op_data(new = Op, {_, Module, _Id}, Data, State) ->
 op_data(update = Op, {_, Module, Id}, Data, State) ->
     {Module, Op, list_to_binary(Id), Data, State};
 op_data(delete = Op, {_, Module, Id}, _Data, State) ->
-    {Module, Op, list_to_binary(Id), State}.
+    {Module, Op, list_to_binary(Id), State};
+op_data(g_delete = Op, {_, Module, _Id}, _Data, State) ->
+    {Module, Op, State}.
 
 code(new) -> 201;
 code(_) -> 200.
@@ -494,7 +497,9 @@ methods(Op)
   when Op =:= new orelse
        Op =:= update ->
     [<<"POST">>, <<"PUT">>];
-methods(delete) ->
+methods(Op)
+  when Op =:= delete orelse
+       Op =:= g_delete ->
     [<<"DELETE">>].
 
 api_test(Url, Method, Data, Config) ->
