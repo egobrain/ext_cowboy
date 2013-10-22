@@ -214,7 +214,7 @@ match(RestPath, Req, #state{dispatch=Dispatch} = State) ->
             terminate_error(404, Reason, Req, State)
     end.
 
-hop_test(_SubRoutes, _RestPath, [{#route{hop=false}, _},_|_]) ->
+hop_test(_SubRoutes, RestPath, [{#route{hop=false}, _},_|_]) when RestPath =/= []  ->
     {error, wrong_path};
 hop_test(SubRoutes, RestPath, Acc) ->
     match_(SubRoutes, RestPath, Acc).
@@ -395,7 +395,7 @@ content_types_accepted(Req, State, Succ) ->
     end.
 
 choose_content_type(Req, State, _ContentType, [], _Succ) ->
-    terminate_error(415, Req, State);
+    terminate_error(416, Req, State);
 choose_content_type(Req, State, ContentType, [{Accepted, Fun}|_Tail], Succ)
   when Accepted =:= '*'; Accepted =:= ContentType ->
     process_data(Fun, Req, State, Succ);
@@ -441,49 +441,41 @@ fold_routes([{Route, Id}|Rest], Req, RouteEnv, Succ) ->
 %% Process
 
 process(Req, #state{operation=new, target=Route, route_env=RouteEnv, data=Data} = State) ->
-    case (Route#route.new)(Req, Data, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(201, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
-    end;
+    Result = (Route#route.new)(Req, Data, RouteEnv),
+	handle_result(201, Result, State);
 process(Req, #state{operation=get, id=Id, target=Route, route_env=RouteEnv} = State) ->
-    case (Route#route.get)(Req, Id, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(200, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
-    end;
+    Result = (Route#route.get)(Req, Id, RouteEnv),
+	handle_result(200, Result, State);
 process(Req, #state{operation=find, target=Route, route_env=RouteEnv} = State) ->
-    case (Route#route.find)(Req, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(200, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
-    end;
+    Result = (Route#route.find)(Req, RouteEnv),
+	handle_result(200, Result, State);
 process(Req, #state{operation=update, id=Id, target=Route, data=Data, route_env=RouteEnv} = State) ->
-    case (Route#route.update)(Req, Id, Data, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(200, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
-    end;
+    Result = (Route#route.update)(Req, Id, Data, RouteEnv),
+	handle_result(200, Result, State);
 process(Req, #state{operation=delete, id=Id, target=Route, route_env=RouteEnv} = State) ->
-    case (Route#route.delete)(Req, Id, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(200, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
-    end;
+    Result = (Route#route.delete)(Req, Id, RouteEnv),
+	handle_result(200, Result, State);
 process(Req, #state{operation=g_delete, target=Route, route_env=RouteEnv} = State) ->
-    case (Route#route.g_delete)(Req, RouteEnv) of
-        {ok, Result, Req2} ->
-            reply(200, Result, Req2, State);
-        {error, Reason, Req2} ->
-            terminate_reason(Reason, Req2, State)
+    Result = (Route#route.g_delete)(Req, RouteEnv),
+	handle_result(200, Result, State).
+
+handle_result(Code, Result, State) ->
+	case Result of
+		{ok, Req} ->
+			reply(Code, Req, State);
+        {ok, Data, Req} ->
+            reply(Code, Data, Req, State);
+		{halt, Req} ->
+			{halt, Req};
+        {error, Reason, Req} ->
+            terminate_reason(Reason, Req, State)
     end.
 
 %% Reply
+
+reply(Code, Req, _State) ->
+	{ok, Req2} = cowboy_req:reply(Code, Req),
+	{halt, Req2}.
 
 reply(Code, Result, Req, #state{ctp_f=Fun, ctp_h=PMT}) ->
     {ok, Body} = Fun(Result),
