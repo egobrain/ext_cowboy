@@ -420,22 +420,19 @@ process_data(Fun, Req, State, Succ) ->
 %% Fold routes
 
 fold_routes(Req, State) ->
-    fold_routes(State#state.hops, Req, [],
-                fun(RouteEnv, Req2) ->
-                        State2 = State#state{
-                                   route_env=RouteEnv
-                                  },
-                        process(Req2, State2)
-                end).
+    fold_routes(State#state.hops, Req, [], State).
 
-fold_routes([], Req, RouteEnv, Succ) ->
-    Succ(RouteEnv, Req);
-fold_routes([{Route, Id}|Rest], Req, RouteEnv, Succ) ->
+fold_routes([], Req, RouteEnv, State) ->
+    State2 = State#state{
+               route_env=RouteEnv
+              },
+    process(Req, State2);
+fold_routes([{Route, Id}|Rest], Req, RouteEnv, State) ->
     case (Route#route.hop)(Req, Id, RouteEnv) of
         {ok, RouteEnv2, Req2} ->
-            fold_routes(Rest, Req2, RouteEnv2, Succ);
-        {error, _Reason, _Req} = Err ->
-            Err
+            fold_routes(Rest, Req2, RouteEnv2, State);
+        {error, Reason, Req2} ->
+            terminate_reason(Reason, Req2, State)
     end.
 
 %% Process
