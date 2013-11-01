@@ -26,10 +26,10 @@
 %% ===================================================================
 
 process(Req) ->
-    process(Req, ext_multipart_default_handler).
+    process(Req, []).
 
-process(Req, Handler) ->
-    process(Req, Handler, []).
+process(Req, Opts) ->
+    process(Req, ext_multipart_default_handler, Opts).
 
 process(Req, Handler, HandlerOpts) ->
     State = #state{
