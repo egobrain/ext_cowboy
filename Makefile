@@ -11,7 +11,7 @@ PLT_APPS = crypto public_key ssl
 # Dependencies.
 
 DEPS = cowboy
-dep_cowboy = pkg://cowboy 0.8.6
+dep_cowboy = pkg://cowboy 0.9.0
 
 TEST_DEPS = ct_helper gun re_utils
 dep_ct_helper = https://github.com/extend/ct_helper.git master
