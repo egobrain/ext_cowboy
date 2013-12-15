@@ -63,7 +63,11 @@ start_of_part(Headers, State) ->
     IsFile = lists:keymember(<<"filename">>, 1, DispParams),
     case IsFile of
         true ->
-            {_, ContentType} = lists:keyfind(<<"content-type">>, 1, Headers),
+            ContentType =
+                case lists:keyfind(<<"content-type">>, 1, Headers) of
+                    {_, Ct} -> Ct;
+                    false -> <<"application/octet-stream">>
+                end,
             start_file(ContentType, DispParams, State2);
         false ->
             start_prop(State2)
